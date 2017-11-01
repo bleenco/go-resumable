@@ -53,7 +53,7 @@ func HTTPHandler(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}
 
-		w.Header().Set("Content-Length", "100")
+		w.Header().Set("Content-Length", string(len(body)))
 		w.Header().Set("Connection", "close")
 		w.Header().Set("Range", contentRange)
 		w.Write([]byte(contentRange))

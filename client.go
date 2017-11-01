@@ -2,62 +2,37 @@ package main
 
 import (
 	"bytes"
-	"crypto/tls"
-	"fmt"
 	"io/ioutil"
 	"math"
 	"net/http"
 	"os"
 )
 
-var (
-	transport = &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-
-	acceptRangeHeader   = "Accept-Ranges"
-	contentLengthHeader = "Content-Length"
-)
-
-// Part upload part structure
-type Part struct {
-	url       string
-	path      string
-	rangeFrom int64
-	rangeTo   int64
-}
-
-// Request structure
-type Request struct {
-	url       string
-	resumable bool
-	file      string
-	par       int64
-	len       int64
-	parts     []Part
-}
-
 // Resumable structure
 type Resumable struct {
-	uploads []Request
+	client    *http.Client
+	url       string
+	filePath  string
+	id        string
+	chunkSize int
 }
 
 // New creates new instance of resumable Client
-func New() *Resumable {
-	var requests []Request
-	client := &Resumable{
-		uploads: requests,
+func New(url string, filePath string, client *http.Client, chunkSize int) *Resumable {
+	resumable := &Resumable{
+		client:    client,
+		url:       url,
+		filePath:  filePath,
+		id:        generateSessionID(),
+		chunkSize: chunkSize,
 	}
 
-	return client
+	return resumable
 }
 
-// Upload initializes upload
-func (c *Resumable) Upload(url string, filePath string) error {
-	id := generateSessionID()
-	client := &http.Client{Transport: transport}
-
-	file, err := os.Open(filePath)
+// StartUpload initializes upload
+func (c *Resumable) StartUpload() error {
+	file, err := os.Open(c.filePath)
 	if err != nil {
 		return err
 	}
@@ -69,25 +44,15 @@ func (c *Resumable) Upload(url string, filePath string) error {
 	}
 
 	var totalSize = fileStat.Size()
-	const fileChunk = 1 * (1 << 20) // 1MB
-	totalPartsNum := uint64(math.Ceil(float64(totalSize) / float64(fileChunk)))
+	totalPartsNum := uint64(math.Ceil(float64(totalSize) / float64(c.chunkSize)))
 
 	for i := uint64(0); i < totalPartsNum; i++ {
-		partSize := int(math.Min(fileChunk, float64(totalSize-int64(i*fileChunk))))
+		partSize := int(math.Min(float64(c.chunkSize), float64(totalSize-int64(i*uint64(c.chunkSize)))))
 		partBuffer := make([]byte, partSize)
 		file.Read(partBuffer)
-		index := uint64(i)
+		contentRange := generateContentRange(i, c.chunkSize, partSize, totalSize)
 
-		var contentRange string
-		if index == 0 {
-			contentRange = "bytes 0-" + fmt.Sprintf("%v", partSize) + "/" + fmt.Sprintf("%v", totalSize)
-		} else {
-			from := fileChunk * i
-			to := fileChunk * (i + 1)
-			contentRange = "bytes " + fmt.Sprintf("%v", from) + "-" + fmt.Sprintf("%v", to) + "/" + fmt.Sprintf("%v", totalSize)
-		}
-
-		err := c.Request(url, client, id, totalSize, index, partBuffer, contentRange)
+		err := httpRequest(c.url, c.client, c.id, totalSize, partBuffer, contentRange)
 		if err != nil {
 			return err
 		}
@@ -96,8 +61,7 @@ func (c *Resumable) Upload(url string, filePath string) error {
 	return nil
 }
 
-// Request initializes HTTP request
-func (c *Resumable) Request(url string, client *http.Client, sessionID string, totalSize int64, index uint64, part []byte, contentRange string) error {
+func httpRequest(url string, client *http.Client, sessionID string, totalSize int64, part []byte, contentRange string) error {
 	request, err := http.NewRequest("POST", url, bytes.NewBuffer(part))
 	if err != nil {
 		return err
@@ -114,10 +78,10 @@ func (c *Resumable) Request(url string, client *http.Client, sessionID string, t
 	}
 	defer response.Body.Close()
 
-	fmt.Println("Status:", response.Status)
-	fmt.Println("Headers:", response.Header)
-	body, _ := ioutil.ReadAll(response.Body)
-	fmt.Println("Body:", string(body))
+	_, err = ioutil.ReadAll(response.Body)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
