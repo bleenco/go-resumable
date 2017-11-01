@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/jkuri/go-resumable"
+	"github.com/bleenco/go-resumable"
 )
 
 func main() {
