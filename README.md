@@ -14,7 +14,7 @@ In this demo upload is paused for 2 seconds after initial second, then it upload
 Please check [here](https://github.com/bleenco/go-resumable/blob/master/examples/progress.go) for full code sample.
 
 <p align="center">
-  <img src="https://user-images.githubusercontent.com/1796022/32300859-b885ae82-bf5b-11e7-9d2c-bce65cb5df21.gif">
+  <img src="https://user-images.githubusercontent.com/1796022/32301133-e68eb2d2-bf5c-11e7-9f18-297c17facb7c.gif">
 </p>
 
 ### Installation
