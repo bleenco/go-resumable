@@ -31,6 +31,7 @@ type Resumable struct {
 	file      *os.File
 	channel   chan int
 	Status    UploadStatus
+	debug     bool
 }
 
 // UploadStatus holds the data about upload
@@ -42,13 +43,14 @@ type UploadStatus struct {
 }
 
 // New creates new instance of resumable Client
-func New(url string, filePath string, client *http.Client, chunkSize int) *Resumable {
+func New(url string, filePath string, client *http.Client, chunkSize int, debug bool) *Resumable {
 	resumable := &Resumable{
 		client:    client,
 		url:       url,
 		filePath:  filePath,
 		id:        generateSessionID(),
 		chunkSize: chunkSize,
+		debug:     debug,
 		Status: UploadStatus{
 			Size:             0,
 			SizeTransferred:  0,
@@ -105,12 +107,22 @@ func (c *Resumable) upload() {
 		case state = <-c.channel:
 			switch state {
 			case stopped:
-				fmt.Printf("Upload %s: stopped\n", c.id)
+				if c.debug {
+					fmt.Printf("Upload %s: stopped\n", c.id)
+				}
 				return
 			case running:
-				fmt.Printf("Upload %s: running\n", c.id)
+				if c.Status.PartsTransferred > 0 {
+					i = i - 1
+				}
+
+				if c.debug {
+					fmt.Printf("Upload %s: running\n", c.id)
+				}
 			case paused:
-				fmt.Printf("Upload %s: paused\n", c.id)
+				if c.debug {
+					fmt.Printf("Upload %s: paused\n", c.id)
+				}
 			}
 
 		default:
@@ -127,10 +139,17 @@ func (c *Resumable) upload() {
 
 func (c *Resumable) uploadChunk(i uint64) {
 	if i == c.Status.Parts {
+		if c.debug {
+			fmt.Printf("Upload %s: done\n", c.id)
+		}
 		WG.Done()
 	} else {
 		fileName := filepath.Base(c.filePath)
-		partSize := int(math.Min(float64(c.chunkSize), float64(c.Status.Size-int64(i*uint64(c.chunkSize)))))
+		partSize := int(math.Ceil((math.Min(float64(c.chunkSize), float64(c.Status.Size-int64(i*uint64(c.chunkSize)))))))
+		if partSize <= 0 {
+			return
+		}
+
 		partBuffer := make([]byte, partSize)
 		c.file.Read(partBuffer)
 		contentRange := generateContentRange(i, c.chunkSize, partSize, c.Status.Size)
