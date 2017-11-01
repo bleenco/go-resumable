@@ -24,12 +24,15 @@ func main() {
 		filePath := "/Users/jan/Desktop/out.dmg"
 
 		httpClient := &http.Client{}
-		// chunkSize := int(1 * (1 << 20)) // 1MB
-		chunkSize := 10000
+		chunkSize := int(1 * (1 << 20)) // 1MB
+		// chunkSize := 10000
 		client := resumable.New(url, filePath, httpClient, chunkSize)
-		err := client.StartUpload()
-		if err != nil {
-			panic(err)
-		}
+		client.Init()
+		client.Start()
+		// time.Sleep(1 * time.Second)
+		// client.Pause()
+		// client.Start()
+
+		resumable.WG.Wait()
 	}
 }
