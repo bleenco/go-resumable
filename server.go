@@ -2,12 +2,16 @@ package resumable
 
 import (
 	"io/ioutil"
+	"mime"
 	"net/http"
 	"os"
+	"time"
 )
 
 type uploadFile struct {
 	file       *os.File
+	name       string
+	tempPath   string
 	status     string
 	size       int64
 	transfered int64
@@ -15,8 +19,24 @@ type uploadFile struct {
 
 var files = make(map[string]uploadFile)
 
+type fileStorage struct {
+	Path     string
+	TempPath string
+}
+
+// FileStorage settings.
+// When finished uploading with success files are stored inside Path config.
+// While uploading temporary files are stored inside TempPath directory.
+var FileStorage = fileStorage{
+	Path:     "./files",
+	TempPath: ".tmp",
+}
+
 // HTTPHandler is main request/response handler for HTTP server.
 func HTTPHandler(w http.ResponseWriter, r *http.Request) {
+	ensureDir(FileStorage.Path)
+	ensureDir(FileStorage.TempPath)
+
 	if r.Method != "POST" || r.Header.Get("Session-ID") == "" || r.Header.Get("Content-Range") == "" {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("Invalid request."))
@@ -36,7 +56,12 @@ func HTTPHandler(w http.ResponseWriter, r *http.Request) {
 		_, ok := files[sessionID]
 		if !ok {
 			w.WriteHeader(http.StatusCreated)
-			newFile := "/Users/jan/Desktop/test-data/" + sessionID + ".dmg"
+
+			_, params, err := mime.ParseMediaType(r.Header.Get("Content-Disposition"))
+			checkError(err)
+			fileName := params["filename"]
+
+			newFile := FileStorage.TempPath + "/" + sessionID
 			_, err = os.Create(newFile)
 			checkError(err)
 
@@ -44,9 +69,11 @@ func HTTPHandler(w http.ResponseWriter, r *http.Request) {
 			checkError(err)
 
 			files[sessionID] = uploadFile{
-				file:   f,
-				status: "created",
-				size:   totalSize,
+				file:     f,
+				name:     fileName,
+				tempPath: newFile,
+				status:   "created",
+				size:     totalSize,
 			}
 		}
 	} else {
@@ -68,7 +95,20 @@ func HTTPHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(contentRange))
 
 	if partTo >= totalSize {
+		moveToPath(sessionID)
 		upload.file.Close()
 		delete(files, sessionID)
 	}
+}
+
+func moveToPath(id string) {
+	uploadFile := files[id]
+	filePath := FileStorage.Path + "/" + uploadFile.name
+	if fileExists(filePath) {
+		t := time.Now().Format(time.RFC3339)
+		filePath = FileStorage.Path + "/" + t + "-" + uploadFile.name
+	}
+
+	err := os.Rename(uploadFile.tempPath, filePath)
+	checkError(err)
 }

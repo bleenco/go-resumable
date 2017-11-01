@@ -1,2 +1,4 @@
 dist/
-
+.tmp/
+files/
+.DS_Store

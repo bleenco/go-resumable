@@ -59,3 +59,17 @@ func parseBody(body string) int64 {
 
 	return partTo
 }
+
+func fileExists(filePath string) bool {
+	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
+		return true
+	}
+
+	return false
+}
+
+func ensureDir(dirPath string) {
+	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
+		os.MkdirAll(dirPath, os.ModePerm)
+	}
+}

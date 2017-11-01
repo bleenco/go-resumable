@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 )
@@ -104,12 +105,12 @@ func (c *Resumable) upload() {
 		case state = <-c.channel:
 			switch state {
 			case stopped:
-				fmt.Printf("Worker %s: stopped\n", c.id)
+				fmt.Printf("Upload %s: stopped\n", c.id)
 				return
 			case running:
-				fmt.Printf("Worker %s: running\n", c.id)
+				fmt.Printf("Upload %s: running\n", c.id)
 			case paused:
-				fmt.Printf("Worker %s: paused\n", c.id)
+				fmt.Printf("Upload %s: paused\n", c.id)
 			}
 
 		default:
@@ -125,15 +126,16 @@ func (c *Resumable) upload() {
 }
 
 func (c *Resumable) uploadChunk(i uint64) {
-	if i+1 == c.Status.Parts {
+	if i == c.Status.Parts {
 		WG.Done()
 	} else {
+		fileName := filepath.Base(c.filePath)
 		partSize := int(math.Min(float64(c.chunkSize), float64(c.Status.Size-int64(i*uint64(c.chunkSize)))))
 		partBuffer := make([]byte, partSize)
 		c.file.Read(partBuffer)
 		contentRange := generateContentRange(i, c.chunkSize, partSize, c.Status.Size)
 
-		responseBody, err := httpRequest(c.url, c.client, c.id, c.Status.Size, partBuffer, contentRange)
+		responseBody, err := httpRequest(c.url, c.client, c.id, c.Status.Size, partBuffer, contentRange, fileName)
 		checkError(err)
 
 		c.Status.SizeTransferred = parseBody(responseBody)
@@ -141,14 +143,14 @@ func (c *Resumable) uploadChunk(i uint64) {
 	}
 }
 
-func httpRequest(url string, client *http.Client, sessionID string, totalSize int64, part []byte, contentRange string) (string, error) {
+func httpRequest(url string, client *http.Client, sessionID string, totalSize int64, part []byte, contentRange string, fileName string) (string, error) {
 	request, err := http.NewRequest("POST", url, bytes.NewBuffer(part))
 	if err != nil {
 		return "", err
 	}
 
 	request.Header.Add("Content-Type", "application/octet-stream")
-	request.Header.Add("Content-Disposition", "attachment; filename='out.dmg'")
+	request.Header.Add("Content-Disposition", "attachment; filename=\""+fileName+"\"")
 	request.Header.Add("Content-Range", contentRange)
 	request.Header.Add("Session-ID", sessionID)
 
