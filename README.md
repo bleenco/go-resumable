@@ -7,6 +7,16 @@ This is done by splitting each file into small chunks; whenever the upload of a 
 This allows uploads to automatically resume uploading after a network connection is lost either locally or to the server.
 Additionally, it allows users to pause, resume and even recover uploads without losing state.
 
+### Demo
+
+In this demo upload is paused for 2 seconds after initial second, then it uploads till 100%.
+
+Please check [here](https://github.com/bleenco/go-resumable/blob/master/examples/progress.go) for full code sample.
+
+<p align="center">
+  <img src="https://user-images.githubusercontent.com/1796022/32300859-b885ae82-bf5b-11e7-9d2c-bce65cb5df21.gif">
+</p>
+
 ### Installation
 
 ```sh
