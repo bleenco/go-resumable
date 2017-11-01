@@ -4,7 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
-	"os"
+
+	"github.com/jkuri/go-resumable"
 )
 
 func main() {
@@ -13,7 +14,9 @@ func main() {
 	flag.Parse()
 
 	if *isServer {
-		server()
+		http.HandleFunc("/", resumable.HTTPHandler)
+		fmt.Println("Listening on http://localhost:2110")
+		http.ListenAndServe(":2110", nil)
 	}
 
 	if *isClient {
@@ -21,18 +24,12 @@ func main() {
 		filePath := "/Users/jan/Desktop/out.dmg"
 
 		httpClient := &http.Client{}
-		chunkSize := int(1 * (1 << 20)) // 1MB
-		client := New(url, filePath, httpClient, chunkSize)
+		// chunkSize := int(1 * (1 << 20)) // 1MB
+		chunkSize := 10000
+		client := resumable.New(url, filePath, httpClient, chunkSize)
 		err := client.StartUpload()
 		if err != nil {
 			panic(err)
 		}
-	}
-}
-
-func checkError(err error) {
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
 	}
 }

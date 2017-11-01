@@ -1,14 +1,17 @@
-package main
+package resumable
 
 import (
 	"crypto/rand"
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
 )
 
-func fatalErrCheck(err error) {
+func checkError(err error) {
 	if err != nil {
-		fmt.Printf("%v", err)
-		panic(err)
+		fmt.Println(err)
+		os.Exit(1)
 	}
 }
 
@@ -29,4 +32,30 @@ func generateContentRange(index uint64, fileChunk int, partSize int, totalSize i
 	}
 
 	return contentRange
+}
+
+func parseContentRange(contentRange string) (totalSize int64, partFrom int64, partTo int64) {
+	contentRange = strings.Replace(contentRange, "bytes ", "", -1)
+	fromTo := strings.Split(contentRange, "/")[0]
+	totalSize, err := strconv.ParseInt(strings.Split(contentRange, "/")[1], 10, 64)
+	checkError(err)
+
+	splitted := strings.Split(fromTo, "-")
+
+	partFrom, err = strconv.ParseInt(splitted[0], 10, 64)
+	checkError(err)
+	partTo, err = strconv.ParseInt(splitted[1], 10, 64)
+	checkError(err)
+
+	return totalSize, partFrom, partTo
+}
+
+func parseBody(body string) int64 {
+	fromTo := strings.Split(body, "/")[0]
+	splitted := strings.Split(fromTo, "-")
+
+	partTo, err := strconv.ParseInt(splitted[1], 10, 64)
+	checkError(err)
+
+	return partTo
 }

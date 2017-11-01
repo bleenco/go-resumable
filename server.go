@@ -1,65 +1,74 @@
-package main
+package resumable
 
 import (
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
-	"strconv"
-	"strings"
 )
 
-func server() {
-	http.HandleFunc("/", HTTPHandler)
-	fmt.Println("Listening on http://localhost:2110")
-	http.ListenAndServe(":2110", nil)
+type uploadFile struct {
+	file       *os.File
+	status     string
+	size       int64
+	transfered int64
 }
 
-var file *os.File
+var files = make(map[string]uploadFile)
 
 // HTTPHandler is main request/response handler for HTTP server.
 func HTTPHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Session-ID") != "" && r.Header.Get("Content-Range") != "" {
-		sessionID := r.Header.Get("Session-ID")
-		contentRange := r.Header.Get("Content-Range")
+	if r.Method != "POST" || r.Header.Get("Session-ID") == "" || r.Header.Get("Content-Range") == "" {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Invalid request."))
+	}
 
-		body, err := ioutil.ReadAll(r.Body)
-		checkError(err)
+	var upload uploadFile
 
-		contentRange = strings.Replace(contentRange, "bytes ", "", -1)
-		fromTo := strings.Split(contentRange, "/")[0]
-		totalSize, _ := strconv.ParseInt(strings.Split(contentRange, "/")[1], 10, 64)
-		splitted := strings.Split(fromTo, "-")
-		partFrom, _ := strconv.ParseInt(splitted[0], 10, 64)
-		partTo, _ := strconv.ParseInt(splitted[1], 10, 64)
+	sessionID := r.Header.Get("Session-ID")
+	contentRange := r.Header.Get("Content-Range")
 
-		if partFrom == 0 {
+	body, err := ioutil.ReadAll(r.Body)
+	checkError(err)
+
+	totalSize, partFrom, partTo := parseContentRange(contentRange)
+
+	if partFrom == 0 {
+		_, ok := files[sessionID]
+		if !ok {
+			w.WriteHeader(http.StatusCreated)
 			newFile := "/Users/jan/Desktop/test-data/" + sessionID + ".dmg"
 			_, err = os.Create(newFile)
 			checkError(err)
 
-			file, err = os.OpenFile(newFile, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+			f, err := os.OpenFile(newFile, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
 			checkError(err)
+
+			files[sessionID] = uploadFile{
+				file:   f,
+				status: "created",
+				size:   totalSize,
+			}
 		}
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
 
-		_, err = file.Write(body)
-		checkError(err)
+	upload = files[sessionID]
+	upload.status = "uploading"
 
-		file.Sync()
+	_, err = upload.file.Write(body)
+	checkError(err)
 
-		if partFrom == 0 {
-			w.WriteHeader(http.StatusCreated)
-		} else {
-			w.WriteHeader(http.StatusOK)
-		}
+	upload.file.Sync()
+	upload.transfered = partTo
 
-		w.Header().Set("Content-Length", string(len(body)))
-		w.Header().Set("Connection", "close")
-		w.Header().Set("Range", contentRange)
-		w.Write([]byte(contentRange))
+	w.Header().Set("Content-Length", string(len(body)))
+	w.Header().Set("Connection", "close")
+	w.Header().Set("Range", contentRange)
+	w.Write([]byte(contentRange))
 
-		if partTo >= totalSize {
-			file.Close()
-		}
+	if partTo >= totalSize {
+		upload.file.Close()
+		delete(files, sessionID)
 	}
 }

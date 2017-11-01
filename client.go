@@ -1,7 +1,8 @@
-package main
+package resumable
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -16,6 +17,17 @@ type Resumable struct {
 	id        string
 	chunkSize int
 }
+
+// UploadStatus holds the data about upload
+type UploadStatus struct {
+	size            int64
+	transfered      int64
+	parts           uint64
+	partsTransfered uint64
+}
+
+// Uploads holds the uploads progresses
+var Uploads = make(map[string]UploadStatus)
 
 // New creates new instance of resumable Client
 func New(url string, filePath string, client *http.Client, chunkSize int) *Resumable {
@@ -46,25 +58,49 @@ func (c *Resumable) StartUpload() error {
 	var totalSize = fileStat.Size()
 	totalPartsNum := uint64(math.Ceil(float64(totalSize) / float64(c.chunkSize)))
 
+	var uploadStatus UploadStatus
+
+	_, ok := Uploads[c.id]
+	if !ok {
+		Uploads[c.id] = UploadStatus{
+			size:            totalSize,
+			transfered:      0,
+			parts:           totalPartsNum,
+			partsTransfered: 0,
+		}
+	}
+
+	uploadStatus = Uploads[c.id]
+
 	for i := uint64(0); i < totalPartsNum; i++ {
 		partSize := int(math.Min(float64(c.chunkSize), float64(totalSize-int64(i*uint64(c.chunkSize)))))
 		partBuffer := make([]byte, partSize)
 		file.Read(partBuffer)
 		contentRange := generateContentRange(i, c.chunkSize, partSize, totalSize)
 
-		err := httpRequest(c.url, c.client, c.id, totalSize, partBuffer, contentRange)
+		responseBody, err := httpRequest(c.url, c.client, c.id, totalSize, partBuffer, contentRange)
 		if err != nil {
 			return err
 		}
+
+		uploadStatus.transfered = parseBody(responseBody)
+		uploadStatus.partsTransfered = i + 1
+
+		fmt.Println(uploadStatus)
 	}
 
 	return nil
 }
 
-func httpRequest(url string, client *http.Client, sessionID string, totalSize int64, part []byte, contentRange string) error {
+// Pause upload by sessionID
+// func (c *Resumable) Pause(sessionID string) error {
+
+// }
+
+func httpRequest(url string, client *http.Client, sessionID string, totalSize int64, part []byte, contentRange string) (string, error) {
 	request, err := http.NewRequest("POST", url, bytes.NewBuffer(part))
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	request.Header.Add("Content-Type", "application/octet-stream")
@@ -74,14 +110,14 @@ func httpRequest(url string, client *http.Client, sessionID string, totalSize in
 
 	response, err := client.Do(request)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer response.Body.Close()
 
-	_, err = ioutil.ReadAll(response.Body)
+	body, err := ioutil.ReadAll(response.Body)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	return nil
+	return string(body), nil
 }
